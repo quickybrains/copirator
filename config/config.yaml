@@ -1,0 +1,12 @@
+lifycycle:
+  interval: 1m
+files:
+  - path: /home/quickybrains/Documents/projects/personal/copirator/results/1.txt
+output:
+  file:
+    enabled: true
+    path: /home/quickybrains/Documents/projects/personal/copirator/results/backup.zip
+  email:
+    addr: smtp.gmail.com
+    to_addr: quickybrains@gmail.com
+    subj: Backup

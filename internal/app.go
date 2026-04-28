@@ -1,0 +1,129 @@
+package internal
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/quickybrains/copirator/internal/log"
+)
+
+type compressor interface {
+	Compress() ([]byte, error)
+}
+
+type outputWriter interface {
+	Write([]byte) error
+}
+
+type App struct {
+	cfg     Config
+	writers map[string]outputWriter
+	wg      sync.WaitGroup
+	stopCh  chan struct{}
+
+	compressor compressor
+	logger     log.Logger
+}
+
+func StartNewApp(cfg Config, logger log.Logger) (*App, error) {
+	a := &App{
+		cfg:     cfg,
+		writers: make(map[string]outputWriter),
+
+		logger: logger.With("component", "app"),
+	}
+
+	err := a.init()
+	if err != nil {
+		return nil, fmt.Errorf("app init: %w", err)
+	}
+
+	return a, nil
+}
+
+func (a *App) init() error {
+	a.compressor = NewCompressor(a.cfg, a.logger)
+
+	emailWriter, err := NewEmailWriter(a.cfg.Output.Email, a.logger)
+	if err != nil {
+		return fmt.Errorf("new email writer: %w", err)
+	}
+
+	a.writers["file"] = NewFileWriter(a.cfg.Output.File, a.logger)
+	a.writers["email"] = emailWriter
+
+	if a.cfg.Lifecycle.SingleRun {
+		err := a.runBackup()
+		if err != nil {
+			return fmt.Errorf("single run backup: %w", err)
+		}
+
+		return nil
+	}
+
+	a.wg.Go(a.backupLoop)
+
+	return nil
+}
+
+func (a *App) Stop() {
+	if a.cfg.Lifecycle.SingleRun {
+		return
+	}
+
+	close(a.stopCh)
+	a.wg.Wait()
+}
+
+func (a *App) backupLoop() {
+	const defaultInterval = 24 * time.Hour
+
+	interval := min(defaultInterval, a.cfg.Lifecycle.BackupInterval)
+	ticker := time.NewTicker(interval)
+
+	tickCh := time.After(0)
+
+	// var tickCh <-chan time.Time
+	// afterF := time.AfterFunc(0, func() {
+	// 	tickCh = ticker.C
+	// })
+	// defer afterF.Stop()
+
+	// tickCh = afterF.C
+
+	a.logger.Info().Int64("interval", int64(interval)).Print("Starting backup loop")
+
+	for {
+		select {
+		case <-tickCh:
+			tickCh = ticker.C
+
+			a.logger.Info().Print("Running backup")
+
+			err := a.runBackup()
+			if err != nil {
+				a.logger.Err(err).Print("Run backup error")
+			}
+		case <-a.stopCh:
+			a.logger.Info().Print("Shutting down")
+			return
+		}
+	}
+}
+
+func (a *App) runBackup() error {
+	data, err := a.compressor.Compress()
+	if err != nil {
+		return fmt.Errorf("compress: %w", err)
+	}
+
+	for name, wr := range a.writers {
+		err = wr.Write(data)
+		if err != nil {
+			return fmt.Errorf("%s output write: %w", name, err)
+		}
+	}
+
+	return nil
+}
