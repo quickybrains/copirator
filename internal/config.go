@@ -27,6 +27,8 @@ type EmailOutputConfig struct {
 	Addr        string        `yaml:"addr"`
 	ToAddr      string        `yaml:"to_addr"`
 	Subj        string        `yaml:"subj"`
+	Username    string        `yaml:"username"`
+	ApiKey      string        `yaml:"api_key"`
 	DialTimeout time.Duration `yaml:"timeout"`
 }
 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -29,18 +28,15 @@ func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, err
 
 	fileName = enrichFileName(fileName)
 
-	username := os.Getenv("EMAIL_USERNAME")
-	pwd := os.Getenv("EMAIL_PASSWORD")
-
-	if username == "" || pwd == "" {
+	if cfg.Username == "" || cfg.ApiKey == "" {
 		return nil, fmt.Errorf("auth credentials are required")
 	}
 
 	client, err := mail.NewClient(
 		cfg.Addr,
 		mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover),
-		mail.WithUsername(username),
-		mail.WithPassword(pwd),
+		mail.WithUsername(cfg.Username),
+		mail.WithPassword(cfg.ApiKey),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("mail new client: %w", err)
@@ -49,7 +45,7 @@ func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, err
 	return &EmailWriter{
 		cfg:      cfg,
 		fileName: fileName,
-		username: username,
+		username: cfg.Username,
 		cl:       client,
 		logger:   logger.With("component", "email_writer"),
 	}, nil
