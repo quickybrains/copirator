@@ -1,0 +1,7 @@
+*.zip
+*.txt
+*.yaml
+*.json
+go.sum
+go.mod
+bin/*

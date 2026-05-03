@@ -1,12 +1,16 @@
 lifycycle:
   interval: 1m
+# Paths to files you want to backup
 files:
-  - path: /home/quickybrains/Documents/projects/personal/copirator/results/1.txt
+  - path:
+# Path to save the backup
 output:
   file:
     enabled: true
-    path: /home/quickybrains/Documents/projects/personal/copirator/results/backup.zip
+    path:
   email:
     addr: smtp.gmail.com
-    to_addr: quickybrains@gmail.com
+    to_addr:
     subj: Backup
+    username:
+    api_key:
