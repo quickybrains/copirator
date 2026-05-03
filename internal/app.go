@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -113,6 +115,19 @@ func (a *App) backupLoop() {
 }
 
 func (a *App) runBackup() error {
+	outdated, err := a.backupOutdated()
+	if err != nil {
+		return fmt.Errorf("backup outdated: %w", err)
+	}
+
+	if !outdated {
+		a.logger.Info().String("path", a.cfg.Output.File.Path).Print("Backup is up-to-date, skip backup")
+
+		return nil
+	}
+
+	a.logger.Info().String("path", a.cfg.Output.File.Path).Print("Backup is outdated, start backup")
+
 	data, err := a.compressor.Compress()
 	if err != nil {
 		return fmt.Errorf("compress: %w", err)
@@ -126,4 +141,27 @@ func (a *App) runBackup() error {
 	}
 
 	return nil
+}
+
+func (a *App) backupOutdated() (bool, error) {
+	outputPath := a.cfg.Output.File.Path
+	f, err := os.Open(outputPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("os open: %w", err)
+	}
+
+	finfo, err := f.Stat()
+	if err != nil {
+		return false, fmt.Errorf("file stat: %w", err)
+	}
+
+	if time.Since(finfo.ModTime()) > a.cfg.Lifecycle.BackupInterval {
+		return true, nil
+	}
+
+	return false, nil
 }
