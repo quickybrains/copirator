@@ -80,6 +80,7 @@ func (ew *EmailWriter) Write(data []byte) error {
 		String("from", ew.username).
 		String("to", ew.cfg.ToAddr).
 		String("subject", ew.cfg.Subj).
+		Int("sizeKb", len(data)/1024).
 		Print("Sending email with backup")
 
 	const defaultDialTimeout = 3 * time.Second

@@ -41,7 +41,6 @@ func NewCompressor(cfg Config, logger log.Logger) *Compressor {
 	return c
 }
 
-// TODO: add logging
 func (c *Compressor) Compress() ([]byte, error) {
 	// We start new compression, reset
 	c.buff.Reset()
@@ -49,6 +48,25 @@ func (c *Compressor) Compress() ([]byte, error) {
 	w := zip.NewWriter(c.buff)
 
 	for _, file := range c.cfg.Files {
+		fInfo, err := os.Stat(file.Path)
+		if err != nil {
+			return nil, fmt.Errorf("os stat: %w", err)
+		}
+
+		if fInfo.IsDir() {
+			dirName, err := c.getDirName(file.Path)
+			if err != nil {
+				return nil, fmt.Errorf("get dir name: %w", err)
+			}
+
+			err = c.traverseDir(dirName, file.Path, c.slashSymbol, w)
+			if err != nil {
+				return nil, fmt.Errorf("traverse dir: %w", err)
+			}
+
+			continue
+		}
+
 		outFileName, err := c.getFileName(file.OutputDir, file.Path)
 		if err != nil {
 			return nil, fmt.Errorf("get file name: %w", err)
@@ -59,22 +77,12 @@ func (c *Compressor) Compress() ([]byte, error) {
 			return nil, fmt.Errorf("zip file create %s: %w", file.OutputDir, err)
 		}
 
-		f, err := os.Open(file.Path)
+		err = copyFileToWriter(file.Path, zf)
 		if err != nil {
-			return nil, fmt.Errorf("os open: %w", err)
+			return nil, fmt.Errorf("copy file to writer: %w", err)
 		}
 
-		_, err = io.Copy(zf, f)
-		if err != nil {
-			return nil, fmt.Errorf("compress file %s: %w", file.Path, err)
-		}
-
-		err = f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("file %s close: %w", file.Path, err)
-		}
-
-		c.logger.Info().String("zip_file", outFileName).Print("Compressed file")
+		c.logger.Info().String("name", outFileName).Print("Compressed file")
 	}
 
 	err := w.Close()
@@ -97,5 +105,80 @@ func (c *Compressor) getFileName(outDir string, filePath string) (string, error)
 		return "", fmt.Errorf("file path should contain name of the file")
 	}
 
-	return outDir + filePath[idx+1:], nil
+	// If dir is empty we don't want leading slash in result
+	if outDir != "" {
+		idx += 1
+	}
+
+	return outDir + filePath[idx:], nil
+}
+
+func (c *Compressor) getDirName(dirPath string) (string, error) {
+	idx := strings.LastIndex(dirPath, c.slashSymbol)
+	if idx == -1 {
+		return "", fmt.Errorf("path to file required, instead get %s", dirPath)
+	}
+
+	if idx == len(dirPath)-1 {
+		return "", fmt.Errorf("file path should contain name of the file")
+	}
+
+	return dirPath[idx+1:], nil
+}
+
+func (c *Compressor) traverseDir(zipPath, dirPath, slashSym string, w *zip.Writer) error {
+	c.logger.Info().String("path", dirPath).Print("Traversing directory")
+
+	dirL, err := os.ReadDir(dirPath)
+	if err != nil {
+		return fmt.Errorf("os read dir: %w", err)
+	}
+
+	for _, nextL := range dirL {
+		nextDirPath := dirPath + slashSym + nextL.Name()
+		nextZipPath := zipPath + slashSym + nextL.Name()
+		if nextL.IsDir() {
+			c.logger.Info().String("path", nextZipPath).Print("Traversing next subdirectory")
+
+			err = c.traverseDir(nextZipPath, nextDirPath, slashSym, w)
+			if err != nil {
+				return fmt.Errorf("traverse dir: %w", err)
+			}
+
+			continue
+		}
+
+		wr, err := w.Create(nextZipPath)
+		if err != nil {
+			return fmt.Errorf("create zip file writer: %w", err)
+		}
+
+		err = copyFileToWriter(nextDirPath, wr)
+		if err != nil {
+			return fmt.Errorf("copy file to writer: %w", err)
+		}
+
+		c.logger.Info().String("path", nextZipPath).Print("Compressed file")
+	}
+
+	return nil
+}
+
+func copyFileToWriter(filePath string, w io.Writer) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("os open: %w", err)
+	}
+
+	_, err = io.Copy(w, f)
+	if err != nil {
+		return fmt.Errorf("compress file %s: %w", filePath, err)
+	}
+
+	err = f.Close()
+	if err != nil {
+		return fmt.Errorf("file %s close: %w", filePath, err)
+	}
+
+	return nil
 }
