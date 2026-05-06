@@ -43,6 +43,10 @@ func main() {
 
 func readConfig() (copirator.Config, error) {
 	cfgPath := os.Getenv("CONFIG_FILE_PATH")
+	if cfgPath == "" {
+		cfgPath = "config.yaml"
+	}
+
 	f, err := os.Open(cfgPath)
 	if err != nil {
 		return copirator.Config{}, fmt.Errorf("os open %s: %w", cfgPath, err)

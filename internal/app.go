@@ -81,20 +81,19 @@ func (a *App) Stop() {
 func (a *App) backupLoop() {
 	const defaultInterval = 24 * time.Hour
 
-	interval := min(defaultInterval, a.cfg.Lifecycle.BackupInterval)
-	ticker := time.NewTicker(interval)
+	interval := defaultInterval
+	if a.cfg.Lifecycle.BackupInterval > 0 {
+		interval = a.cfg.Lifecycle.BackupInterval
+	}
 
+	ticker := time.NewTicker(interval)
 	tickCh := time.After(0)
 
-	// var tickCh <-chan time.Time
-	// afterF := time.AfterFunc(0, func() {
-	// 	tickCh = ticker.C
-	// })
-	// defer afterF.Stop()
-
-	// tickCh = afterF.C
-
-	a.logger.Info().Int64("interval", int64(interval)).Print("Starting backup loop")
+	a.logger.
+		Info().
+		Int64("hours", int64(interval.Hours())).
+		Int64("minutes", int64(interval.Minutes())).
+		Print("Starting backup loop")
 
 	for {
 		select {
@@ -159,7 +158,7 @@ func (a *App) backupOutdated() (bool, error) {
 		return false, fmt.Errorf("file stat: %w", err)
 	}
 
-	if time.Since(finfo.ModTime()) > a.cfg.Lifecycle.BackupInterval {
+	if time.Since(finfo.ModTime().Add(-1*time.Minute)) >= a.cfg.Lifecycle.BackupInterval {
 		return true, nil
 	}
 
