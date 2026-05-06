@@ -14,3 +14,4 @@ output:
     subj: Backup
     username:
     api_key:
+    timeout: 30s
