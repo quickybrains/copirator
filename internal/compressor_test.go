@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"archive/zip"
+	"bytes"
 	"testing"
 
 	"github.com/quickybrains/copirator/internal/log/zerolog"
@@ -18,6 +20,15 @@ func TestCompressor(t *testing.T) {
 
 	testCmpr := NewCompressor(cfg, zerolog.NewNoop(nil))
 
-	_, err := testCmpr.Compress()
-	require.ErrorIs(t, err, ErrAllFilesSkipped)
+	data, err := testCmpr.Compress()
+	require.NoError(t, err)
+	require.Len(t, data, 1)
+
+	dataR := bytes.NewReader(data[0])
+
+	r, err := zip.NewReader(dataR, int64(len(data[0])))
+	require.NoError(t, err)
+
+	_, err = r.Open("testdata/book.epub")
+	require.NoError(t, err)
 }

@@ -92,6 +92,11 @@ func (c *Compressor) compressChunks(input []zipChunk) ([][]byte, error) {
 			}
 		}
 
+		err := w.Close()
+		if err != nil {
+			return nil, fmt.Errorf("zip writer close: %w", err)
+		}
+
 		res = append(res, buff.Bytes())
 	}
 
