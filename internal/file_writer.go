@@ -3,6 +3,8 @@ package internal
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/quickybrains/copirator/internal/log"
 )
@@ -19,27 +21,49 @@ func NewFileWriter(cfg FileOutputConfig, logger log.Logger) *FileWriter {
 	}
 }
 
-func (fw *FileWriter) Write(data []byte) error {
+func (fw *FileWriter) Write(data [][]byte) error {
 	if !fw.cfg.Enabled {
 		return nil
 	}
 
-	f, err := os.Create(fw.cfg.Path)
-	if err != nil {
-		return fmt.Errorf("os create %s: %w", fw.cfg.Path, err)
-	}
+	for idx, nextData := range data {
+		fileName := nextFileName(fw.cfg.Path, idx+1)
 
-	fw.logger.Info().String("path", fw.cfg.Path).Print("Writing backup to file")
+		f, err := os.Create(fileName)
+		if err != nil {
+			return fmt.Errorf("os create %s: %w", fileName, err)
+		}
 
-	_, err = f.Write(data)
-	if err != nil {
-		return fmt.Errorf("file write %s: %w", fw.cfg.Path, err)
-	}
+		fw.logger.Info().
+			Int("fileIdx", idx+1).
+			String("path", fileName).
+			Print("Writing backup to file")
 
-	err = f.Close()
-	if err != nil {
-		return fmt.Errorf("file close %s: %w", fw.cfg.Path, err)
+		_, err = f.Write(nextData)
+		if err != nil {
+			return fmt.Errorf("file write %s: %w", fileName, err)
+		}
+
+		err = f.Close()
+		if err != nil {
+			return fmt.Errorf("file close %s: %w", fileName, err)
+		}
 	}
 
 	return nil
+}
+
+func nextFileName(name string, idx int) string {
+	var suffix string
+
+	dotIdx := strings.LastIndex(name, ".")
+	if dotIdx != -1 {
+		suffix = name[dotIdx:]
+		name = name[:dotIdx]
+
+	}
+
+	name += "_" + strconv.FormatInt(int64(idx), 10)
+
+	return name + suffix
 }

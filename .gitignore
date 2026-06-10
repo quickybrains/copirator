@@ -2,6 +2,7 @@
 *.txt
 *.yaml
 *.json
+*.pdf
 go.sum
 go.mod
 bin/*

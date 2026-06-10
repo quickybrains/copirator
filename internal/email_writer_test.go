@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"os"
 	"testing"
 
 	"github.com/quickybrains/copirator/internal/log/zerolog"
@@ -11,33 +10,33 @@ import (
 func TestEmailWriter_Smoke(t *testing.T) {
 	// Turn on for test
 	cfg := EmailOutputConfig{
-		Enabled: false,
+		Enabled: true,
 		Addr:    "smtp.gmail.com",
 		// Need to use temp email
-		ToAddr:   "quickybrains@gmail.com",
+		ToAddr: "quickybrains@gmail.com",
+		// Creds
+		Username: "quickybrains@gmail.com",
+		ApiKey:   "izfo mode afjy agjw",
 		Subj:     "Backup",
 		FileName: "backup.zip",
 	}
 
-	// Need to provide credentials for an existing email box for sending
-	err := os.Setenv("EMAIL_USERNAME", "quickybrains@gmail.com")
-	require.NoError(t, err)
-
-	err = os.Setenv("EMAIL_PASSWORD", "izfo mode afjy agjw")
-	require.NoError(t, err)
-
 	testEmailWriter, err := NewEmailWriter(cfg, zerolog.NewNoop(nil))
 	require.NoError(t, err)
 
-	// testData := "Some simple message from an outer world.\nHello, Earth!"
+	fileCfg := FileOutputConfig{
+		Enabled: true,
+		Path:    "./testdata/result.zip",
+	}
+	testFileWriter := NewFileWriter(fileCfg, zerolog.NewNoop(nil))
 
 	cmprCfg := Config{
+		Compression: CompressionConfig{
+			SizeLimitMb: 15,
+		},
 		Files: []FileConfig{
 			{
-				Path: "./testdata/book.pdf",
-			},
-			{
-				Path: "./testdata/pic.jpg",
+				Path: "./testdata",
 			},
 		},
 	}
@@ -47,6 +46,9 @@ func TestEmailWriter_Smoke(t *testing.T) {
 	testData, err := testCmpr.Compress()
 	require.NoError(t, err)
 
-	err = testEmailWriter.Write([]byte(testData))
+	err = testFileWriter.Write(testData)
+	require.NoError(t, err)
+
+	err = testEmailWriter.Write(testData)
 	require.NoError(t, err)
 }

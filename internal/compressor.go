@@ -3,18 +3,21 @@ package internal
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/quickybrains/copirator/internal/log"
 )
 
+var ErrAllFilesSkipped error = errors.New("All files have been skipped")
+
 type Compressor struct {
 	cfg         Config
-	buff        *bytes.Buffer
 	slashSymbol string
 
 	logger log.Logger
@@ -23,7 +26,6 @@ type Compressor struct {
 func NewCompressor(cfg Config, logger log.Logger) *Compressor {
 	c := &Compressor{
 		cfg:         cfg,
-		buff:        new(bytes.Buffer),
 		slashSymbol: "/",
 
 		logger: logger.With("component", "compressor"),
@@ -41,12 +43,117 @@ func NewCompressor(cfg Config, logger log.Logger) *Compressor {
 	return c
 }
 
-func (c *Compressor) Compress() ([]byte, error) {
-	// We start new compression, reset
-	c.buff.Reset()
+func (c *Compressor) Compress() ([][]byte, error) {
+	files, err := c.collectFileInfo()
+	if err != nil {
+		return nil, fmt.Errorf("collect file info: %w", err)
+	}
 
-	w := zip.NewWriter(c.buff)
+	if len(files) == 0 {
+		c.logger.Info().Print("All files have been skipped")
 
+		return nil, ErrAllFilesSkipped
+	}
+
+	chunks := c.devideOnChunks(files)
+
+	data, err := c.compressChunks(chunks)
+	if err != nil {
+		return nil, fmt.Errorf("compress chunks: %w", err)
+	}
+
+	return data, nil
+}
+
+type zipFileInfo struct {
+	archivePath string
+	inputPath   string
+	sizeMb      int64
+}
+
+type zipChunk []zipFileInfo
+
+func (c *Compressor) compressChunks(input []zipChunk) ([][]byte, error) {
+	res := make([][]byte, 0, len(input))
+	for _, nextZipChunk := range input {
+		// We start new compression, reset
+		buff := new(bytes.Buffer)
+		w := zip.NewWriter(buff)
+
+		for _, nextZipFile := range nextZipChunk {
+			zf, err := w.Create(nextZipFile.archivePath)
+			if err != nil {
+				return nil, fmt.Errorf("zip file create %s: %w", nextZipFile.archivePath, err)
+			}
+
+			err = copyFileToWriter(nextZipFile.inputPath, zf)
+			if err != nil {
+				return nil, fmt.Errorf("copy file to writer: %w", err)
+			}
+		}
+
+		res = append(res, buff.Bytes())
+	}
+
+	return res, nil
+}
+
+func (c *Compressor) devideOnChunks(files []zipFileInfo) []zipChunk {
+	res := make([]zipChunk, 0, 10)
+	currChunk := make(zipChunk, 0, 10)
+
+	var currSize int64
+	for _, nextFile := range files {
+		if nextFile.sizeMb > c.cfg.Compression.GetSizeLimitMb() {
+			c.logger.Info().
+				String("filePath", nextFile.inputPath).
+				Int64("fileSizeMb", nextFile.sizeMb).
+				Print("Skip file due to its large size")
+
+			continue
+		}
+
+		currSize += nextFile.sizeMb
+		if currSize > c.cfg.Compression.GetSizeLimitMb() {
+			c.logger.Info().
+				String("firstFilePath", currChunk[0].inputPath).
+				Int64("firstFileSizeMb", currChunk[0].sizeMb).
+				String("lastFilePath", currChunk[len(currChunk)-1].inputPath).
+				Int64("lastFileSizeMb", currChunk[len(currChunk)-1].sizeMb).
+				Int64("fileLimit", c.cfg.Compression.GetSizeLimitMb()).
+				Print("Reached file limit, generated chunk")
+
+			// Copying curr chunk content
+			chunkCopy := make([]zipFileInfo, len(currChunk))
+			copy(chunkCopy, currChunk)
+			res = append(res, chunkCopy)
+
+			// Reset curr chunk
+			currChunk = currChunk[:0]
+
+			// Not forgetting about current file
+			currChunk = append(currChunk, nextFile)
+			currSize = nextFile.sizeMb
+			continue
+		}
+
+		currChunk = append(currChunk, nextFile)
+	}
+
+	if len(currChunk) > 0 {
+		res = append(res, currChunk)
+	}
+
+	c.logger.Info().
+		Int("chunksLen", len(res)).
+		Int64("fileLimit", c.cfg.Compression.GetSizeLimitMb()).
+		Print("Generated chunks")
+
+	return res
+}
+
+func (c *Compressor) collectFileInfo() ([]zipFileInfo, error) {
+	res := make([]zipFileInfo, 0, 100)
 	for _, file := range c.cfg.Files {
 		fInfo, err := os.Stat(file.Path)
 		if err != nil {
@@ -59,7 +166,7 @@ func (c *Compressor) Compress() ([]byte, error) {
 				return nil, fmt.Errorf("get dir name: %w", err)
 			}
 
-			err = c.traverseDir(dirName, file.Path, c.slashSymbol, w)
+			res, err = c.traverseDir(dirName, file.Path, c.slashSymbol, res)
 			if err != nil {
 				return nil, fmt.Errorf("traverse dir: %w", err)
 			}
@@ -67,36 +174,29 @@ func (c *Compressor) Compress() ([]byte, error) {
 			continue
 		}
 
-		outFileName, err := c.getFileName(file.OutputDir, file.Path)
+		outFileName, err := getFileName(file.OutputDir, file.Path, c.slashSymbol)
 		if err != nil {
 			return nil, fmt.Errorf("get file name: %w", err)
 		}
 
-		zf, err := w.Create(outFileName)
-		if err != nil {
-			return nil, fmt.Errorf("zip file create %s: %w", file.OutputDir, err)
+		fSizeMb := float64(fInfo.Size()) / (1024 * 1024)
+
+		fileInfo := zipFileInfo{
+			archivePath: outFileName,
+			inputPath:   file.Path,
+			sizeMb:      int64(fSizeMb),
 		}
 
-		err = copyFileToWriter(file.Path, zf)
-		if err != nil {
-			return nil, fmt.Errorf("copy file to writer: %w", err)
-		}
-
-		c.logger.Info().String("name", outFileName).Print("Compressed file")
+		res = append(res, fileInfo)
 	}
 
-	err := w.Close()
-	if err != nil {
-		return nil, fmt.Errorf("zip close: %w", err)
-	}
+	c.logger.Info().Int("filesLen", len(res)).Print("Collected files info")
 
-	c.logger.Info().Print("Compression successful")
-
-	return c.buff.Bytes(), nil
+	return res, nil
 }
 
-func (c *Compressor) getFileName(outDir string, filePath string) (string, error) {
-	idx := strings.LastIndex(filePath, c.slashSymbol)
+func getFileName(outDir string, filePath string, slashSym string) (string, error) {
+	idx := strings.LastIndex(filePath, slashSym)
 	if idx == -1 {
 		return "", fmt.Errorf("path to file required, instead get %s", filePath)
 	}
@@ -126,12 +226,12 @@ func (c *Compressor) getDirName(dirPath string) (string, error) {
 	return dirPath[idx+1:], nil
 }
 
-func (c *Compressor) traverseDir(zipPath, dirPath, slashSym string, w *zip.Writer) error {
+func (c *Compressor) traverseDir(zipPath, dirPath, slashSym string, info []zipFileInfo) ([]zipFileInfo, error) {
 	c.logger.Info().String("path", dirPath).Print("Traversing directory")
 
 	dirL, err := os.ReadDir(dirPath)
 	if err != nil {
-		return fmt.Errorf("os read dir: %w", err)
+		return info, fmt.Errorf("os read dir: %w", err)
 	}
 
 	for _, nextL := range dirL {
@@ -140,28 +240,57 @@ func (c *Compressor) traverseDir(zipPath, dirPath, slashSym string, w *zip.Write
 		if nextL.IsDir() {
 			c.logger.Info().String("path", nextZipPath).Print("Traversing next subdirectory")
 
-			err = c.traverseDir(nextZipPath, nextDirPath, slashSym, w)
+			info, err = c.traverseDir(nextZipPath, nextDirPath, slashSym, info)
 			if err != nil {
-				return fmt.Errorf("traverse dir: %w", err)
+				return info, fmt.Errorf("traverse dir: %w", err)
 			}
 
 			continue
 		}
 
-		wr, err := w.Create(nextZipPath)
+		ext, err := getExtension(nextDirPath)
 		if err != nil {
-			return fmt.Errorf("create zip file writer: %w", err)
+			return info, fmt.Errorf("get extension: %w", err)
 		}
 
-		err = copyFileToWriter(nextDirPath, wr)
-		if err != nil {
-			return fmt.Errorf("copy file to writer: %w", err)
+		if slices.Contains(c.cfg.Filter.Extension, ext) {
+			c.logger.Info().
+				String("ext", ext).
+				String("filePath", nextDirPath).
+				Print("Skipping file due to extension filter")
+			continue
 		}
 
-		c.logger.Info().String("path", nextZipPath).Print("Compressed file")
+		fInfo, err := os.Stat(nextDirPath)
+		if err != nil {
+			return info, fmt.Errorf("os stat: %w", err)
+		}
+
+		fSizeMb := float64(fInfo.Size()) / (1024 * 1024)
+
+		fileInfo := zipFileInfo{
+			archivePath: nextZipPath,
+			inputPath:   nextDirPath,
+			sizeMb:      int64(fSizeMb),
+		}
+
+		info = append(info, fileInfo)
 	}
 
-	return nil
+	return info, nil
+}
+
+func getExtension(name string) (string, error) {
+	idx := strings.LastIndex(name, ".")
+	if idx == -1 {
+		return "", fmt.Errorf("file extension is required, actual %s", name)
+	}
+
+	if idx+1 >= len(name) {
+		return "", fmt.Errorf("file extension is expected after dot, actual %s", name)
+	}
+
+	return name[idx+1:], nil
 }
 
 func copyFileToWriter(filePath string, w io.Writer) error {

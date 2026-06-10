@@ -25,8 +25,9 @@ func TestCompressor(t *testing.T) {
 
 	data, err := testCmpr.Compress()
 	require.NoError(t, err)
+	require.Len(t, data, 1)
 
-	dataR := bytes.NewReader(data)
+	dataR := bytes.NewReader(data[0])
 
 	r, err := zip.NewReader(dataR, int64(len(data)))
 	require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +26,6 @@ func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, err
 	if cfg.FileName != "" {
 		fileName = cfg.FileName
 	}
-
-	fileName = enrichFileName(fileName)
 
 	if cfg.Username == "" || cfg.ApiKey == "" {
 		return nil, fmt.Errorf("auth credentials are required")
@@ -51,53 +50,60 @@ func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, err
 	}, nil
 }
 
-func (ew *EmailWriter) Write(data []byte) error {
+func (ew *EmailWriter) Write(data [][]byte) error {
 	if !ew.cfg.Enabled {
+		ew.logger.Info().Print("Email writer is disabled")
+
 		return nil
 	}
 
-	r := bytes.NewReader(data)
-	msg := mail.NewMsg()
+	for idx, nextData := range data {
+		r := bytes.NewReader(nextData)
+		msg := mail.NewMsg()
 
-	err := msg.From(ew.username)
-	if err != nil {
-		return fmt.Errorf("add `from` addr: %w", err)
-	}
+		err := msg.From(ew.username)
+		if err != nil {
+			return fmt.Errorf("add `from` addr: %w", err)
+		}
 
-	err = msg.To(ew.cfg.ToAddr)
-	if err != nil {
-		return fmt.Errorf("add `to` addr: %w", err)
-	}
-	msg.Subject(ew.cfg.Subj)
+		err = msg.To(ew.cfg.ToAddr)
+		if err != nil {
+			return fmt.Errorf("add `to` addr: %w", err)
+		}
+		msg.Subject(ew.cfg.Subj)
 
-	err = msg.EmbedReader(ew.fileName, r, mail.WithFileContentType(mail.TypeTextPlain))
-	if err != nil {
-		return fmt.Errorf("embed zip readed: %w", err)
-	}
+		fileName := enrichFileName(ew.fileName, idx+1)
 
-	ew.logger.
-		Info().
-		String("from", ew.username).
-		String("to", ew.cfg.ToAddr).
-		String("subject", ew.cfg.Subj).
-		Int("sizeKb", len(data)/1024).
-		Print("Sending email with backup")
+		err = msg.EmbedReader(fileName, r, mail.WithFileContentType(mail.TypeTextPlain))
+		if err != nil {
+			return fmt.Errorf("embed zip readed: %w", err)
+		}
 
-	const defaultDialTimeout = 3 * time.Second
-	diatTimeout := max(defaultDialTimeout, ew.cfg.DialTimeout)
+		ew.logger.
+			Info().
+			String("from", ew.username).
+			String("to", ew.cfg.ToAddr).
+			String("subject", ew.cfg.Subj).
+			Int("sizeKb", len(nextData)/1024).
+			Int("mailIdx", idx+1).
+			Print("Sending email with backup")
 
-	ctx, cancelFn := context.WithTimeout(context.Background(), diatTimeout)
-	defer cancelFn()
+		const defaultDialTimeout = 15 * time.Second
+		diatTimeout := max(defaultDialTimeout, ew.cfg.DialTimeout)
 
-	err = ew.cl.DialAndSendWithContext(ctx, msg)
-	if err != nil {
-		return fmt.Errorf("dial and send: %w", err)
+		ctx, cancelFn := context.WithTimeout(context.Background(), diatTimeout)
+		defer cancelFn()
+
+		err = ew.cl.DialAndSendWithContext(ctx, msg)
+		if err != nil {
+			return fmt.Errorf("dial and send: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func enrichFileName(name string) string {
+func enrichFileName(name string, fileIdx int) string {
 	var suffix string
 
 	idx := strings.LastIndex(name, ".")
@@ -107,7 +113,7 @@ func enrichFileName(name string) string {
 
 	}
 
-	name += " " + time.Now().Format(time.DateTime)
+	name += "_" + strconv.FormatInt(int64(fileIdx), 10) + "_" + time.Now().Format(time.DateTime)
 
 	return name + suffix
 }
