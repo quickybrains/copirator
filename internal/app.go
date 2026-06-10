@@ -11,11 +11,11 @@ import (
 )
 
 type compressor interface {
-	Compress() ([]byte, error)
+	Compress() ([][]byte, error)
 }
 
 type outputWriter interface {
-	Write([]byte) error
+	Write([][]byte) error
 }
 
 type App struct {

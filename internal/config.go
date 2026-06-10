@@ -16,9 +16,24 @@ type FileConfig struct {
 	OutputDir string `yaml:"output_dir"`
 }
 
+type FilterConfig struct {
+	Extension []string `yaml:"ext"`
+}
+
+const defaultSizeLimitMb = 15
+
 type CompressionConfig struct {
-	Type  string `yaml:"type"`  // "zip", "tar.gz"
-	Ratio int    `yaml:"ratio"` // (1-100)
+	SizeLimitMb int64  `yaml:"limit_mb"`
+	Type        string `yaml:"type"`  // "zip", "tar.gz"
+	Ratio       int    `yaml:"ratio"` // (1-100)
+}
+
+func (cc CompressionConfig) GetSizeLimitMb() int64 {
+	if cc.SizeLimitMb <= 0 {
+		return defaultSizeLimitMb
+	}
+
+	return cc.SizeLimitMb
 }
 
 type EmailOutputConfig struct {
@@ -53,6 +68,8 @@ type Config struct {
 	Lifecycle LifecycleConfig `yaml:"lifycycle"`
 	// Paths to files to backup
 	Files []FileConfig `yaml:"files"`
+	// Files to filter
+	Filter FilterConfig
 	// Compression settings
 	Compression CompressionConfig `yaml:"compression"`
 	// Output settings
