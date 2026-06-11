@@ -7,21 +7,26 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+
+	"github.com/quickybrains/copirator/internal/log"
 )
 
 type Encryptor struct {
-	cfg EncryptionConfig
+	cfg    EncryptionConfig
+	logger log.Logger
 }
 
-func NewEncryptor(cfg EncryptionConfig) *Encryptor {
+func NewEncryptor(cfg EncryptionConfig, logger log.Logger) *Encryptor {
 	return &Encryptor{
-		cfg: cfg,
+		cfg:    cfg,
+		logger: logger.With("component", "encrypter"),
 	}
 }
 
 func (e *Encryptor) Encrypt(src [][]byte) ([][]byte, error) {
-	// TODO: log
 	if !e.cfg.Enabled {
+		e.logger.Info().Print("Encrypter is disabled")
+
 		return src, nil
 	}
 

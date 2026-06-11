@@ -62,7 +62,7 @@ func (a *App) init() error {
 	a.basicWriters["file"] = NewFileWriter(a.cfg.Output.File, a.logger)
 	a.safeWriters["email"] = emailWriter
 
-	a.encryptor = NewEncryptor(a.cfg.Encryption)
+	a.encryptor = NewEncryptor(a.cfg.Encryption, a.logger)
 
 	if a.cfg.Lifecycle.SingleRun {
 		err := a.runBackup()

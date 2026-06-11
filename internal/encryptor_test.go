@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/quickybrains/copirator/internal/log/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +20,7 @@ func TestEncryptor_Smoke(t *testing.T) {
 		Enabled: true,
 		Key:     "llllllllllllllllllllllllllllllll",
 	}
-	testEncryptor := NewEncryptor(cfg)
+	testEncryptor := NewEncryptor(cfg, zerolog.NewNoop(nil))
 
 	data, err := testEncryptor.Encrypt(test)
 	require.NoError(t, err)
@@ -46,7 +47,7 @@ func TestDecryptor_Smoke(t *testing.T) {
 		Enabled: true,
 		Key:     "ponka14ponka14ponka14ponka14ponk",
 	}
-	testEncryptor := NewEncryptor(cfg)
+	testEncryptor := NewEncryptor(cfg, zerolog.NewNoop(nil))
 
 	decrypted, err := testEncryptor.TestDecrypt([][]byte{data})
 	require.NoError(t, err)
