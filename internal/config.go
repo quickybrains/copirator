@@ -20,6 +20,16 @@ type FilterConfig struct {
 	Extension []string `yaml:"ext"`
 }
 
+type EncryptionConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Key     string `yaml:"key"`
+}
+
+type DecryptionConfig struct {
+	Files []FileConfig `yaml:"files"`
+	Key   string       `yaml:"key"`
+}
+
 const defaultSizeLimitMb = 15
 
 type CompressionConfig struct {
@@ -70,6 +80,10 @@ type Config struct {
 	Files []FileConfig `yaml:"files"`
 	// Files to filter
 	Filter FilterConfig
+	// Encryption
+	Encryption EncryptionConfig `yaml:"encryption"`
+	// Encryption
+	Decryption DecryptionConfig `yaml:"decryption"`
 	// Compression settings
 	Compression CompressionConfig `yaml:"compression"`
 	// Output settings

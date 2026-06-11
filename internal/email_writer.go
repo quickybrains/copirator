@@ -22,7 +22,7 @@ type EmailWriter struct {
 }
 
 func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, error) {
-	fileName := "backup.zip"
+	fileName := "backup.txt"
 	if cfg.FileName != "" {
 		fileName = cfg.FileName
 	}

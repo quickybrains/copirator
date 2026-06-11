@@ -14,15 +14,21 @@ type compressor interface {
 	Compress() ([][]byte, error)
 }
 
+type encryptor interface {
+	Encrypt(src [][]byte) ([][]byte, error)
+}
+
 type outputWriter interface {
 	Write([][]byte) error
 }
 
 type App struct {
-	cfg     Config
-	writers map[string]outputWriter
-	wg      sync.WaitGroup
-	stopCh  chan struct{}
+	cfg          Config
+	basicWriters map[string]outputWriter
+	safeWriters  map[string]outputWriter
+	encryptor    encryptor
+	wg           sync.WaitGroup
+	stopCh       chan struct{}
 
 	compressor compressor
 	logger     log.Logger
@@ -30,8 +36,9 @@ type App struct {
 
 func StartNewApp(cfg Config, logger log.Logger) (*App, error) {
 	a := &App{
-		cfg:     cfg,
-		writers: make(map[string]outputWriter),
+		cfg:          cfg,
+		basicWriters: make(map[string]outputWriter),
+		safeWriters:  make(map[string]outputWriter),
 
 		logger: logger.With("component", "app"),
 	}
@@ -52,8 +59,10 @@ func (a *App) init() error {
 		return fmt.Errorf("new email writer: %w", err)
 	}
 
-	a.writers["file"] = NewFileWriter(a.cfg.Output.File, a.logger)
-	a.writers["email"] = emailWriter
+	a.basicWriters["file"] = NewFileWriter(a.cfg.Output.File, a.logger)
+	a.safeWriters["email"] = emailWriter
+
+	a.encryptor = NewEncryptor(a.cfg.Encryption)
 
 	if a.cfg.Lifecycle.SingleRun {
 		err := a.runBackup()
@@ -132,7 +141,19 @@ func (a *App) runBackup() error {
 		return fmt.Errorf("compress: %w", err)
 	}
 
-	for name, wr := range a.writers {
+	for name, wr := range a.basicWriters {
+		err = wr.Write(data)
+		if err != nil {
+			return fmt.Errorf("%s output write: %w", name, err)
+		}
+	}
+
+	for name, wr := range a.safeWriters {
+		data, err := a.encryptor.Encrypt(data)
+		if err != nil {
+			return fmt.Errorf("encrypt: %w", err)
+		}
+
 		err = wr.Write(data)
 		if err != nil {
 			return fmt.Errorf("%s output write: %w", name, err)
