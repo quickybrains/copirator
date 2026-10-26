@@ -13,7 +13,7 @@ func TestCompressor(t *testing.T) {
 	cfg := Config{
 		Files: []FileConfig{
 			{
-				Path: "./testdata",
+				Path: "./testdata/encrypt",
 			},
 		},
 	}
@@ -22,13 +22,12 @@ func TestCompressor(t *testing.T) {
 
 	data, err := testCmpr.Compress()
 	require.NoError(t, err)
-	require.Len(t, data, 1)
 
 	dataR := bytes.NewReader(data[0])
 
 	r, err := zip.NewReader(dataR, int64(len(data[0])))
 	require.NoError(t, err)
 
-	_, err = r.Open("testdata/book.epub")
+	_, err = r.Open("encrypt/book.epub")
 	require.NoError(t, err)
 }

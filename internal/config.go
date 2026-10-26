@@ -20,20 +20,30 @@ type FilterConfig struct {
 	Extension []string `yaml:"ext"`
 }
 
-const defaultSizeLimitMb = 15
+type EncryptionConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Key     string `yaml:"key"`
+}
+
+type DecryptionConfig struct {
+	Files []FileConfig `yaml:"files"`
+	Key   string       `yaml:"key"`
+}
+
+const defaultSizeLimitKB = 15360
 
 type CompressionConfig struct {
-	SizeLimitMb int64  `yaml:"limit_mb"`
+	SizeLimitKB int64  `yaml:"limit_kb"`
 	Type        string `yaml:"type"`  // "zip", "tar.gz"
 	Ratio       int    `yaml:"ratio"` // (1-100)
 }
 
-func (cc CompressionConfig) GetSizeLimitMb() int64 {
-	if cc.SizeLimitMb <= 0 {
-		return defaultSizeLimitMb
+func (cc CompressionConfig) GetSizeLimitKB() int64 {
+	if cc.SizeLimitKB <= 0 {
+		return defaultSizeLimitKB
 	}
 
-	return cc.SizeLimitMb
+	return cc.SizeLimitKB
 }
 
 type EmailOutputConfig struct {
@@ -70,6 +80,10 @@ type Config struct {
 	Files []FileConfig `yaml:"files"`
 	// Files to filter
 	Filter FilterConfig
+	// Encryption
+	Encryption EncryptionConfig `yaml:"encryption"`
+	// Encryption
+	Decryption DecryptionConfig `yaml:"decryption"`
 	// Compression settings
 	Compression CompressionConfig `yaml:"compression"`
 	// Output settings
