@@ -68,7 +68,7 @@ func (c *Compressor) Compress() ([][]byte, error) {
 type zipFileInfo struct {
 	archivePath string
 	inputPath   string
-	sizeMb      int64
+	sizeKB      int64
 }
 
 type zipChunk []zipFileInfo
@@ -109,23 +109,23 @@ func (c *Compressor) devideOnChunks(files []zipFileInfo) []zipChunk {
 
 	var currSize int64
 	for _, nextFile := range files {
-		if nextFile.sizeMb > c.cfg.Compression.GetSizeLimitMb() {
+		if nextFile.sizeKB > c.cfg.Compression.GetSizeLimitKB() {
 			c.logger.Info().
 				String("filePath", nextFile.inputPath).
-				Int64("fileSizeMb", nextFile.sizeMb).
+				Int64("fileSizeMb", nextFile.sizeKB).
 				Print("Skip file due to its large size")
 
 			continue
 		}
 
-		currSize += nextFile.sizeMb
-		if currSize > c.cfg.Compression.GetSizeLimitMb() {
+		currSize += nextFile.sizeKB
+		if currSize >= c.cfg.Compression.GetSizeLimitKB() {
 			c.logger.Info().
 				String("firstFilePath", currChunk[0].inputPath).
-				Int64("firstFileSizeMb", currChunk[0].sizeMb).
+				Int64("firstFileSizeMb", currChunk[0].sizeKB).
 				String("lastFilePath", currChunk[len(currChunk)-1].inputPath).
-				Int64("lastFileSizeMb", currChunk[len(currChunk)-1].sizeMb).
-				Int64("fileLimit", c.cfg.Compression.GetSizeLimitMb()).
+				Int64("lastFileSizeMb", currChunk[len(currChunk)-1].sizeKB).
+				Int64("fileLimit", c.cfg.Compression.GetSizeLimitKB()).
 				Print("Reached file limit, generated chunk")
 
 			// Copying curr chunk content
@@ -138,7 +138,7 @@ func (c *Compressor) devideOnChunks(files []zipFileInfo) []zipChunk {
 
 			// Not forgetting about current file
 			currChunk = append(currChunk, nextFile)
-			currSize = nextFile.sizeMb
+			currSize = nextFile.sizeKB
 			continue
 		}
 
@@ -151,7 +151,7 @@ func (c *Compressor) devideOnChunks(files []zipFileInfo) []zipChunk {
 
 	c.logger.Info().
 		Int("chunksLen", len(res)).
-		Int64("fileLimit", c.cfg.Compression.GetSizeLimitMb()).
+		Int64("fileLimit", c.cfg.Compression.GetSizeLimitKB()).
 		Print("Generated chunks")
 
 	return res
@@ -184,18 +184,21 @@ func (c *Compressor) collectFileInfo() ([]zipFileInfo, error) {
 			return nil, fmt.Errorf("get file name: %w", err)
 		}
 
-		fSizeMb := float64(fInfo.Size()) / (1024 * 1024)
+		fSizeKB := float64(fInfo.Size()) / 1024
 
 		fileInfo := zipFileInfo{
 			archivePath: outFileName,
 			inputPath:   file.Path,
-			sizeMb:      int64(fSizeMb),
+			sizeKB:      int64(fSizeKB),
 		}
 
 		res = append(res, fileInfo)
 	}
 
-	c.logger.Info().Int("filesLen", len(res)).Print("Collected files info")
+	c.logger.
+		Info().
+		Int("file count", len(res)).
+		Print("Collected files info")
 
 	return res, nil
 }
@@ -271,12 +274,12 @@ func (c *Compressor) traverseDir(zipPath, dirPath, slashSym string, info []zipFi
 			return info, fmt.Errorf("os stat: %w", err)
 		}
 
-		fSizeMb := float64(fInfo.Size()) / (1024 * 1024)
+		fSizeKB := float64(fInfo.Size()) / 1024
 
 		fileInfo := zipFileInfo{
 			archivePath: nextZipPath,
 			inputPath:   nextDirPath,
-			sizeMb:      int64(fSizeMb),
+			sizeKB:      int64(fSizeKB),
 		}
 
 		info = append(info, fileInfo)

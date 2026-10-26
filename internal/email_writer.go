@@ -31,8 +31,11 @@ func NewEmailWriter(cfg EmailOutputConfig, logger log.Logger) (*EmailWriter, err
 		return nil, fmt.Errorf("auth credentials are required")
 	}
 
+	const defaultSMTPPort = 587
+
 	client, err := mail.NewClient(
 		cfg.Addr,
+		mail.WithPort(defaultSMTPPort),
 		mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover),
 		mail.WithUsername(cfg.Username),
 		mail.WithPassword(cfg.ApiKey),
@@ -88,7 +91,7 @@ func (ew *EmailWriter) Write(data [][]byte) error {
 			Int("mailIdx", idx+1).
 			Print("Sending email with backup")
 
-		const defaultDialTimeout = 15 * time.Second
+		const defaultDialTimeout = 3 * time.Minute
 		diatTimeout := max(defaultDialTimeout, ew.cfg.DialTimeout)
 
 		ctx, cancelFn := context.WithTimeout(context.Background(), diatTimeout)
@@ -98,6 +101,10 @@ func (ew *EmailWriter) Write(data [][]byte) error {
 		if err != nil {
 			return fmt.Errorf("dial and send: %w", err)
 		}
+
+		ew.logger.
+			Info().
+			Print("Backup was sent")
 	}
 
 	return nil
